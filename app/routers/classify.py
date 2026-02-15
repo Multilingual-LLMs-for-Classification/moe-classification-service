@@ -68,6 +68,39 @@ async def classify_text(
         )
 
 
+@router.post("/test", response_model=ClassifyResponse)
+async def classify_text_test(
+    request: ClassifyRequest,
+    current_user: CurrentUser,
+    routing_service: RoutingServiceDep,
+) -> ClassifyResponse:
+    """
+    Temporary mock classification endpoint for frontend development.
+
+    Uses the same request shape and authentication/dependency injection
+    as the production classify endpoint, but returns a hardcoded response.
+    """
+    _ = request
+    _ = current_user
+    _ = routing_service
+
+    return ClassifyResponse(
+        request_id="00000000-0000-0000-0000-000000000001",
+        language="english",
+        domain="finance",
+        task="rating",
+        result="4",
+        confidence=0.94,
+        routing_path="english → finance → rating",
+        processing_time_ms=12.5,
+        domain_probabilities={
+            "finance": 0.94,
+            "general": 0.06,
+        },
+        raw_response="4",
+    )
+
+
 @router.post("/batch", response_model=BatchClassifyResponse)
 async def classify_batch(
     request: BatchClassifyRequest,
@@ -90,6 +123,7 @@ async def classify_batch(
     Returns:
         BatchClassifyResponse with all results
     """
+    print("hittinggg....")
     if not routing_service.is_initialized:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
