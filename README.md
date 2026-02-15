@@ -20,7 +20,7 @@ Input Text → Language Detection → Domain Classification → Task Routing →
 ### 1. Clone and setup
 
 ```bash
-git clone https://github.com/<your-org>/moe-classification-service.git
+git clone https://github.com/Multilingual-LLMs-for-Classification/moe-classification-service.git
 cd moe-classification-service
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
