@@ -138,7 +138,7 @@ async def classify_batch(
         try:
             result = await routing_service.classify(item)
             results.append(result)
-        except Exception as e:
+        except Exception:
             failed += 1
             # Continue processing remaining items
 

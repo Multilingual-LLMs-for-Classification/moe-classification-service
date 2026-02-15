@@ -379,7 +379,7 @@ class PIIExpert:
         if isinstance(label_field, str):
             try:
                 entities = json.loads(label_field)
-            except:
+            except Exception:
                 entities = []
         else:
             entities = label_field if isinstance(label_field, list) else []
@@ -552,7 +552,7 @@ class PIIExpert:
         try:
             entities = json.loads(label)
             return entities if isinstance(entities, list) else []
-        except:
+        except Exception:
             return []
 
     def _normalize_entity_label(self, entity: Dict) -> Dict:

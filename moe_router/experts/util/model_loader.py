@@ -76,7 +76,6 @@ class ModelLoader:
         cache_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            from transformers import AutoModel, AutoTokenizer
             
             print(f"Cache directory for {domain}/{task}: {cache_dir}")
             
@@ -126,7 +125,7 @@ class ModelLoader:
             from transformers import AutoModel
             AutoModel.from_pretrained(model_name, local_files_only=True)
             return True
-        except:
+        except Exception:
             return False
     
     def ensure_model_available(self, domain, task):

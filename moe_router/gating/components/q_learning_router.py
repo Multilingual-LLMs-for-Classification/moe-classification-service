@@ -6,15 +6,13 @@ Includes TransformersEncoder, QRouter, and QLearningTaskClassifier.
 """
 
 from pathlib import Path
-from typing import Dict, List, Tuple
-from collections import defaultdict
+from typing import Dict, List
 import random
 import json
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel
