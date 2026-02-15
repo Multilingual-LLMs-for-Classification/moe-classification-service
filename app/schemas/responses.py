@@ -3,7 +3,6 @@ Response schemas for classification endpoints.
 """
 
 from typing import Dict, Optional, Any, List
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 

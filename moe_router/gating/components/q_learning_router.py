@@ -67,7 +67,8 @@ class DomainTaskDataset(Dataset):
     Dataset for Q-learning: sample = (input_ids, attention_mask, true_task_id, text, language)
     Filtered per-domain using given task2id.
     """
-    def __init__(self, items: List[Dict], encoder: TransformersEncoder, task2id: Dict[str, int], max_len=128):
+    def __init__(self, items: List[Dict], encoder: TransformersEncoder,
+                 task2id: Dict[str, int], max_len=128):
         self.items = [it for it in items if it["task"] in task2id]
         self.encoder = encoder
         self.task2id = task2id
@@ -82,7 +83,8 @@ class DomainTaskDataset(Dataset):
         return len(self.items)
 
     def __getitem__(self, idx):
-        return (self.input_ids[idx], self.attn[idx], self.labels[idx], self.items[idx]["prompt"], self.langs[idx])
+        return (self.input_ids[idx], self.attn[idx], self.labels[idx],
+                self.items[idx]["prompt"], self.langs[idx])
 
 
 class QLearningTaskClassifier:
@@ -131,7 +133,9 @@ class QLearningTaskClassifier:
             i2t = {i: t for t, i in t2i.items()}
             self.task2id[domain] = t2i
             self.id2task[domain] = i2t
-            self.routers[domain] = QRouter(self.encoder.out_dim, num_tasks=len(task_names)).to(self.device)
+            self.routers[domain] = QRouter(
+                self.encoder.out_dim,
+                num_tasks=len(task_names)).to(self.device)
 
         # Single optimizer for encoder + all routers
         params = list(self.encoder.parameters()) + [p for r in self.routers.values() for p in r.parameters()]
@@ -148,15 +152,16 @@ class QLearningTaskClassifier:
 
     def _domain_train_loop(self, domain: str, items: List[Dict]):
         if not items:
-            print(f"No training items for domain '{domain}', skipping.")
+            print("No training items for domain ", domain , ", skipping.")
             return
         dataset = DomainTaskDataset(items, self.encoder, self.task2id[domain], max_len=self.max_len)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True, num_workers=2, pin_memory=(DEVICE=="cuda"))
         router = self.routers[domain]
 
-        print(f"Training QRouter for domain '{domain}'   | samples={len(dataset)} tasks={len(self.task2id[domain])}")
+        print("Training QRouter for domain ", domain, " | samples=", len(dataset), " tasks=", len(self.task2id[domain]))
         for epoch in range(self.epochs):
-            router.train(); self.encoder.train()
+            router.train()
+            self.encoder.train()
             for input_ids, attn, labels, _, _ in loader:
                 input_ids = input_ids.to(self.device)
                 attn = attn.to(self.device)
@@ -182,7 +187,7 @@ class QLearningTaskClassifier:
                 self.optimizer.step()
                 self.global_step += 1
 
-            print(f"  Epoch {epoch+1}/{self.epochs} finished for domain '{domain}'")
+            print("Epoch ", epoch+1, "/", self.epochs, " finished for domain ", domain)
 
     @torch.no_grad()
     def _domain_eval(self, domain: str, items: List[Dict]) -> float:
@@ -191,8 +196,10 @@ class QLearningTaskClassifier:
         dataset = DomainTaskDataset(items, self.encoder, self.task2id[domain], max_len=self.max_len)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=False, num_workers=2, pin_memory=(DEVICE=="cuda"))
         router = self.routers[domain]
-        router.eval(); self.encoder.eval()
-        correct = 0; total = 0
+        router.eval()
+        self.encoder.eval()
+        correct = 0
+        total = 0
         for input_ids, attn, labels, _, _ in loader:
             input_ids = input_ids.to(self.device)
             attn = attn.to(self.device)
@@ -212,7 +219,7 @@ class QLearningTaskClassifier:
         for domain in self.domain_tasks.keys():
             domain_items = [d for d in training_data if d.get("domain") == domain and d.get("task") in self.task2id[domain]]
             if not domain_items:
-                print(f"No labeled items for domain '{domain}', skipping training.")
+                print("No labeled items for domain ", domain, " skipping training.")
                 continue
             idx = np.random.permutation(len(domain_items))
             n_val = int(val_split * len(domain_items))
@@ -220,16 +227,18 @@ class QLearningTaskClassifier:
             train_items = [domain_items[i] for i in idx[n_val:]]
             self._domain_train_loop(domain, train_items)
             acc = self._domain_eval(domain, val_items) if val_items else 0.0
-            print(f"  -> Validation accuracy for domain '{domain}': {acc:.4f}")
+            print("  -> Validation accuracy for domain ", domain, " : ", acc)
 
     @torch.no_grad()
     def classify_task(self, text: str, domain: str) -> str:
         if domain not in self.routers:
             task_names = list(self.domain_tasks[domain].keys())
             return task_names[0] if task_names else "unknown"
-        self.encoder.eval(); self.routers[domain].eval()
+        self.encoder.eval()
+        self.routers[domain].eval()
         input_ids, attn = self.encoder.tokenize([text], max_len=self.max_len)
-        input_ids = input_ids.to(self.device); attn = attn.to(self.device)
+        input_ids = input_ids.to(self.device)
+        attn = attn.to(self.device)
         h = self.encoder(input_ids, attn)
         q_values = self.routers[domain](h)
         pred_id = int(q_values.argmax(dim=-1).item())
@@ -244,7 +253,7 @@ class QLearningTaskClassifier:
         for domain, router in self.routers.items():
             rp = self.model_dir / f"router_{domain}.pth"
             torch.save(router.state_dict(), rp)
-        print(f"Q-learning routers saved to: {self.model_dir}")
+        print("Q-learning routers saved to: " ,self.model_dir)
 
     def load_models(self) -> bool:
         cfg_path = self.model_dir / "qrouter_config.json"
@@ -256,11 +265,11 @@ class QLearningTaskClassifier:
                     cfg = json.load(f)
                     enc_name = cfg.get("encoder_name", self.encoder_name)
                     if enc_name != self.encoder_name:
-                        print(f"Stored encoder '{enc_name}' differs from requested '{self.encoder_name}'. Using stored name.")
+                        print("Stored encoder ",enc_name," differs from requested '{self.encoder_name}'. Using stored name.")
                         self.encoder = TransformersEncoder(enc_name).to(self.device)
                         self.encoder_name = enc_name
             except json.JSONDecodeError:
-                print(f"Config file {cfg_path} is corrupted, using default encoder")
+                print("Config file ", cfg_path, " is corrupted, using default encoder")
                 ok = False
         if enc_path.exists():
             self.encoder.load_state_dict(torch.load(enc_path, map_location=self.device))
@@ -273,7 +282,7 @@ class QLearningTaskClassifier:
             else:
                 ok = False
         if ok:
-            print(f"Q-learning routers loaded from: {self.model_dir}")
+            print("Q-learning routers loaded from: ", self.model_dir)
         else:
-            print(f"Q-learning routers not fully found; will train new ones.")
+            print("Q-learning routers not fully found, will train new ones.")
         return ok

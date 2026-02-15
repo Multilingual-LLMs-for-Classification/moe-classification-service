@@ -107,9 +107,12 @@ class DomainClassifier(nn.Module):
     def _build_loaders(self, texts: List[str], labels: List[int], val_split=0.1, batch_size=32):
         idx = np.random.permutation(len(texts))
         n_val = int(len(texts) * val_split)
-        val_idx = idx[:n_val]; tr_idx = idx[n_val:]
-        x_tr = [texts[i] for i in tr_idx]; y_tr = [labels[i] for i in tr_idx]
-        x_va = [texts[i] for i in val_idx]; y_va = [labels[i] for i in val_idx]
+        val_idx = idx[:n_val]
+        tr_idx = idx[n_val:]
+        x_tr = [texts[i] for i in tr_idx]
+        y_tr = [labels[i] for i in tr_idx]
+        x_va = [texts[i] for i in val_idx]
+        y_va = [labels[i] for i in val_idx]
 
         ds_tr = _DomainDataset(x_tr, y_tr, self.tokenizer, self.max_len)
         ds_va = _DomainDataset(x_va, y_va, self.tokenizer, self.max_len)
@@ -120,7 +123,8 @@ class DomainClassifier(nn.Module):
 
     @torch.no_grad()
     def _compute_prototypes(self, texts: List[str], labels: List[int], batch_size: int = 64):
-        self.eval(); self.encoder.eval()
+        self.eval()
+        self.encoder.eval()
         hidden = self.encoder.config.hidden_size
         sums = torch.zeros((len(self.domains), hidden), device=self.device_)
         counts = torch.zeros((len(self.domains),), device=self.device_)
@@ -192,7 +196,8 @@ class DomainClassifier(nn.Module):
         for ep in range(1, epochs+1):
             # ---- Train ----
             self.train()
-            running = 0.0; n = 0
+            running = 0.0
+            n = 0
             for batch in train_loader:
                 inp = batch["input_ids"].to(self.device_)
                 att = batch["attention_mask"].to(self.device_)
@@ -212,7 +217,8 @@ class DomainClassifier(nn.Module):
 
             # ---- Eval ----
             self.eval()
-            correct = 0; total = 0
+            correct = 0
+            total = 0
             with torch.no_grad():
                 for batch in val_loader:
                     inp = batch["input_ids"].to(self.device_)

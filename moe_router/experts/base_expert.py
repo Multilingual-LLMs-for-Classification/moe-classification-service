@@ -1,6 +1,5 @@
 from abc import ABC, abstractmethod
 import json
-import pickle
 import os
 
 class BaseLLMExpert(ABC):

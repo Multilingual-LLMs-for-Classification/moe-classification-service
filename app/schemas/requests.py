@@ -2,7 +2,7 @@
 Request schemas for classification endpoints.
 """
 
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, List
 
 from pydantic import BaseModel, Field
 

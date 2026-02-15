@@ -7,7 +7,6 @@ Supports 176 languages with fallback pattern matching.
 
 import json
 from pathlib import Path
-from typing import Dict, List, Set
 
 import requests
 import fasttext
@@ -79,14 +78,14 @@ class LanguageDetector:
                     lang_full = self._code_to_full_name(lang_code)
                     self.all_supported_languages.add(lang_full)
 
-            print(f"Loaded language support from registry:")
+            print("Loaded language support from registry:")
             for task, langs in self.supported_languages_by_task.items():
-                print(f"   {task}: {langs}")
-            print(f"   All supported languages: {sorted(self.all_supported_languages)}")
+                print(task, " : ", langs)
+            print("All supported languages: ", sorted(self.all_supported_languages))
 
         except Exception as e:
-            print(f"Could not load languages from registry: {e}")
-            print(f"   Using default language mapping")
+            print("Could not load languages from registry: ",{e})
+            print("   Using default language mapping")
 
     def _code_to_full_name(self, code: str) -> str:
         """Convert language code to full name (e.g., 'en' -> 'english')"""
@@ -117,8 +116,8 @@ class LanguageDetector:
                 fasttext_label = f'__label__{code.lower()}'
                 mapping[fasttext_label] = full_name
 
-            print(f"Built dynamic language mapping for {len(mapping)} languages:")
-            print(f"   {sorted(mapping.values())}")
+            print("Built dynamic language mapping for ", len(mapping), + " languages:")
+            print(sorted(mapping.values()))
         else:
             # Fallback: build from comprehensive mapping
             for code, full_name in self._comprehensive_code_mapping.items():
@@ -128,7 +127,7 @@ class LanguageDetector:
             # Update all_supported_languages with comprehensive set
             self.all_supported_languages = set(self._comprehensive_code_mapping.values())
 
-            print(f"No registry languages loaded, using comprehensive mapping ({len(mapping)} languages)")
+            print("No registry languages loaded, using comprehensive mapping (", len(mapping), " languages)")
 
         return mapping
 
@@ -145,7 +144,7 @@ class LanguageDetector:
             self.model = fasttext.load_model(str(self.model_path))
             print("FastText language model loaded")
         except Exception as e:
-            print(f"FastText model failed, using fallback: {e}")
+            print("FastText model failed, using fallback: ",{e})
             self.model = None
 
     def _download_fasttext_model(self):

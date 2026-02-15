@@ -1,7 +1,6 @@
 # moe_router/experts/llms/expert_pool.py
 from __future__ import annotations
 import json
-import re
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 

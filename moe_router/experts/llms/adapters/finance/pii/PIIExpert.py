@@ -8,8 +8,8 @@ It handles malformed JSON, repairs truncated outputs, and validates entity struc
 import json
 import re
 import numpy as np
-from typing import List, Dict, Set, Tuple
-from collections import Counter, defaultdict
+from typing import List, Dict, Tuple
+from collections import defaultdict
 
 
 class PIIExpert:

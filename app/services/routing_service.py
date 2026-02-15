@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 from uuid import uuid4
 
 from app.config import settings
-from app.schemas.requests import ClassifyRequest, ClassifyOptions
+from app.schemas.requests import ClassifyRequest
 from app.schemas.responses import ClassifyResponse
 
 

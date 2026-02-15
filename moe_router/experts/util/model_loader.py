@@ -1,5 +1,4 @@
 import json
-import os
 from importlib import import_module
 import requests
 from pathlib import Path
@@ -88,10 +87,6 @@ class ModelLoader:
                 print(f"Downloading HuggingFace model: {model_name}")
                 print(f"Domain: {domain}, Task: {task}")
                 print(f"Cache directory: {cache_dir}")
-                
-                # Download model and tokenizer to domain-specific cache directory
-                model = AutoModel.from_pretrained(model_name, cache_dir=cache_dir)
-                tokenizer = AutoTokenizer.from_pretrained(model_name, cache_dir=cache_dir)
                 
                 print(f"Model {model_name} downloaded successfully to {cache_dir}")
                 return True

@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 
-from app.schemas.auth import User, TokenData
+from app.schemas.auth import User
 from app.services.auth_service import decode_token, get_user
 from app.services.routing_service import routing_service, RoutingService
 

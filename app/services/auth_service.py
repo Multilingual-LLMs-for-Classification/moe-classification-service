@@ -9,7 +9,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 from app.config import settings
-from app.schemas.auth import TokenData, User, UserInDB
+from app.schemas.auth import TokenData, UserInDB
 
 
 # Password hashing context
