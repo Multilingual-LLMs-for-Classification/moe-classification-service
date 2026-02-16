@@ -2,7 +2,7 @@
 Request schemas for classification endpoints.
 """
 
-from typing import Dict, Optional, List
+from typing import List
 
 from pydantic import BaseModel, Field
 
@@ -20,31 +20,17 @@ class ClassifyOptions(BaseModel):
     )
 
 
-class InputData(BaseModel):
-    """Input data for classification."""
-
-    text: str = Field(..., description="Text to classify")
-    title: Optional[str] = Field(None, description="Optional title/header text")
-
-    def to_dict(self) -> Dict[str, str]:
-        """Convert to dictionary for routing system."""
-        result = {"text": self.text}
-        if self.title:
-            result["title"] = self.title
-        return result
-
-
 class ClassifyRequest(BaseModel):
     """Request body for single classification."""
 
-    prompt: str = Field(
+    description: str = Field(
         ...,
-        description="Classification prompt with instructions",
-        examples=["Classify the sentiment of this review as 1-5 stars."]
+        description="Task description used for language/domain/task identification",
+        examples=["Rate this product review from 1 to 5 stars based on sentiment."]
     )
-    input_data: InputData = Field(
+    text: str = Field(
         ...,
-        description="Data to classify"
+        description="The text to classify using the selected expert"
     )
     options: ClassifyOptions = Field(
         default_factory=ClassifyOptions,
@@ -55,11 +41,8 @@ class ClassifyRequest(BaseModel):
         "json_schema_extra": {
             "examples": [
                 {
-                    "prompt": "Rate this product review from 1 to 5 stars based on sentiment.",
-                    "input_data": {
-                        "text": "This product exceeded my expectations! Great quality and fast shipping.",
-                        "title": "Amazing product"
-                    },
+                    "description": "Rate this product review from 1 to 5 stars based on sentiment.",
+                    "text": "This product exceeded my expectations! Great quality and fast shipping.",
                     "options": {
                         "return_probabilities": True,
                         "return_raw_response": False

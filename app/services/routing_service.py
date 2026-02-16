@@ -119,6 +119,9 @@ class RoutingService:
         """
         Synchronous classification (runs in thread pool).
 
+        Combines description + text into a prompt for routing (language/domain/task),
+        then passes the text separately as input_data for the expert.
+
         Args:
             request: Classification request
             request_id: Unique request identifier
@@ -128,16 +131,15 @@ class RoutingService:
         """
         start_time = time.perf_counter()
 
-        # Prepare input data for routing system
-        input_data = {
-            "text": request.input_data.text,
-        }
-        if request.input_data.title:
-            input_data["title"] = request.input_data.title
+        # Combine description and text into the prompt for routing
+        prompt = f"{request.description}\n\n{request.text}"
+
+        # Prepare input data for the expert
+        input_data = {"text": request.text}
 
         # Call routing system
         result = self._routing_system.route_prompt(
-            prompt=request.prompt,
+            prompt=prompt,
             input_data=input_data
         )
 

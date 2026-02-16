@@ -116,7 +116,7 @@ class LanguageDetector:
                 fasttext_label = f'__label__{code.lower()}'
                 mapping[fasttext_label] = full_name
 
-            print("Built dynamic language mapping for ", len(mapping), + " languages:")
+            print("Built dynamic language mapping for ", len(mapping), " languages:")
             print(sorted(mapping.values()))
         else:
             # Fallback: build from comprehensive mapping
