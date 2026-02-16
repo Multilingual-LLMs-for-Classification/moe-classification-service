@@ -2,7 +2,6 @@
 from app.schemas.auth import Token, TokenData, User, UserInDB, UserCreate
 from app.schemas.requests import (
     ClassifyOptions,
-    InputData,
     ClassifyRequest,
     BatchClassifyRequest,
 )
@@ -24,7 +23,6 @@ __all__ = [
     "UserCreate",
     # Requests
     "ClassifyOptions",
-    "InputData",
     "ClassifyRequest",
     "BatchClassifyRequest",
     # Responses

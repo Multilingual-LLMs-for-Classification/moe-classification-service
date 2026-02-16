@@ -27,24 +27,11 @@ async def classify_text(
     """
     Classify a single text input.
 
-    This endpoint routes the input through the MOE-Router system:
-    1. Detects the language
-    2. Classifies the domain
-    3. Selects the appropriate task
-    4. Executes the task expert
+    The description is combined with the text to form the prompt used
+    for language/domain/task routing. The text is then passed separately
+    to the selected expert for classification.
 
     Requires authentication via Bearer token.
-
-    Args:
-        request: Classification request with prompt and input data
-        current_user: Authenticated user (injected)
-        routing_service: Routing service (injected)
-
-    Returns:
-        ClassifyResponse with classification results
-
-    Raises:
-        HTTPException: If classification fails or times out
     """
     if not routing_service.is_initialized:
         raise HTTPException(
@@ -76,14 +63,10 @@ async def classify_text_test(
 ) -> ClassifyResponse:
     """
     Temporary mock classification endpoint for frontend development.
-
-    Uses the same request shape and authentication/dependency injection
-    as the production classify endpoint, but returns a hardcoded response.
+    Returns a hardcoded response using the new request shape.
     """
-    _ = request
-    _ = current_user
-    _ = routing_service
-
+    
+    print("test classify method is hitting....")
     return ClassifyResponse(
         request_id="00000000-0000-0000-0000-000000000001",
         language="english",
@@ -97,7 +80,7 @@ async def classify_text_test(
             "finance": 0.94,
             "general": 0.06,
         },
-        raw_response="4",
+        raw_response=request.text,
     )
 
 
