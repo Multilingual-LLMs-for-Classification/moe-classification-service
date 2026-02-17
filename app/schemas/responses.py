@@ -110,3 +110,30 @@ class ErrorResponse(BaseModel):
     error: str = Field(..., description="Error message")
     detail: Optional[str] = Field(None, description="Detailed error information")
     request_id: Optional[str] = Field(None, description="Request ID for tracking")
+
+
+class RecentRequestItem(BaseModel):
+    """Recent classification request in analytics."""
+
+    timestamp: str
+    request_id: str
+    language: str
+    domain: str
+    task: str
+    confidence: Optional[float] = None
+    processing_time_ms: float
+
+
+class AnalyticsSummaryResponse(BaseModel):
+    """Analytics summary response."""
+
+    total_requests: int
+    total_errors: int
+    error_rate: float
+    avg_confidence: Optional[float] = None
+    avg_processing_time_ms: Optional[float] = None
+    language_distribution: Dict[str, int]
+    domain_distribution: Dict[str, int]
+    task_distribution: Dict[str, int]
+    task_avg_confidence: Dict[str, float]
+    recent_requests: List[RecentRequestItem]

@@ -14,6 +14,7 @@ from app.schemas.responses import (
     BatchClassifyResponse,
     SystemStatsResponse,
 )
+from app.services.analytics_service import analytics_service
 
 router = APIRouter(prefix="/api/v1/classify", tags=["Classification"])
 
@@ -41,14 +42,17 @@ async def classify_text(
 
     try:
         result = await routing_service.classify(request)
+        analytics_service.record_classification(result.model_dump())
         return result
 
     except TimeoutError as e:
+        analytics_service.record_error()
         raise HTTPException(
             status_code=status.HTTP_504_GATEWAY_TIMEOUT,
             detail=str(e)
         )
     except Exception as e:
+        analytics_service.record_error()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Classification failed: {str(e)}"
@@ -67,7 +71,7 @@ async def classify_text_test(
     """
     
     print("test classify method is hitting....")
-    return ClassifyResponse(
+    response = ClassifyResponse(
         request_id="00000000-0000-0000-0000-000000000001",
         language="english",
         domain="finance",
@@ -82,6 +86,8 @@ async def classify_text_test(
         },
         raw_response=request.text,
     )
+    analytics_service.record_classification(response.model_dump())
+    return response
 
 
 @router.post("/batch", response_model=BatchClassifyResponse)
@@ -120,8 +126,10 @@ async def classify_batch(
     for item in request.items:
         try:
             result = await routing_service.classify(item)
+            analytics_service.record_classification(result.model_dump())
             results.append(result)
         except Exception:
+            analytics_service.record_error()
             failed += 1
             # Continue processing remaining items
 

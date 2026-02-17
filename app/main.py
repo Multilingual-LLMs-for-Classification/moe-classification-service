@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, classify, health
+from app.routers import admin, analytics, auth, classify, health
 from app.services.routing_service import routing_service
 from app.middleware.error_handler import ErrorHandlerMiddleware, add_request_id
 
@@ -78,6 +78,8 @@ app.add_middleware(ErrorHandlerMiddleware)
 app.middleware("http")(add_request_id)
 
 # Include routers
+app.include_router(admin.router)
+app.include_router(analytics.router)
 app.include_router(auth.router)
 app.include_router(classify.router)
 app.include_router(health.router)
