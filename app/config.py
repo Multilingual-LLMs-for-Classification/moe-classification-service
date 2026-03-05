@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     gpu_memory_fraction: Optional[float] = None
 
     # Request Settings
-    request_timeout_seconds: int = 120
+    request_timeout_seconds: int = 600
     max_concurrent_gpu_requests: int = 1
 
     # User Store (simple in-memory for demo; replace with DB in production)

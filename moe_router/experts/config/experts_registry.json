@@ -159,7 +159,7 @@
         "sv"
       ],
       "generation": {
-        "max_new_tokens": 4096,
+        "max_new_tokens": 512,
         "temperature": 0.0,
         "top_p": 1.0
       },

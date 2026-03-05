@@ -71,3 +71,6 @@ docker/volumes/
 htmlcov/
 .coverage
 coverage.xml
+
+*.zip
+*.model

@@ -276,7 +276,29 @@ class QLearningTaskClassifier:
         for domain, router in self.routers.items():
             rp = self.model_dir / f"router_{domain}.pth"
             if rp.exists():
-                router.load_state_dict(torch.load(rp, map_location=self.device))
+                saved_state = torch.load(rp, map_location=self.device)
+                # Handle size mismatch: checkpoint may have fewer tasks than current config
+                current_state = router.state_dict()
+                needs_adapt = False
+                for key in saved_state:
+                    if key in current_state and saved_state[key].shape != current_state[key].shape:
+                        needs_adapt = True
+                        break
+                if needs_adapt:
+                    print(f"[QRouter] Size mismatch for domain '{domain}': "
+                          f"checkpoint has {saved_state['net.2.weight'].shape[0]} tasks, "
+                          f"current config has {current_state['net.2.weight'].shape[0]} tasks. "
+                          f"Loading compatible weights, new tasks initialized randomly.")
+                    for key in saved_state:
+                        if saved_state[key].shape == current_state[key].shape:
+                            current_state[key] = saved_state[key]
+                        else:
+                            # Copy the saved weights into the matching slice
+                            saved_size = saved_state[key].shape[0]
+                            current_state[key][:saved_size] = saved_state[key]
+                    router.load_state_dict(current_state)
+                else:
+                    router.load_state_dict(saved_state)
             else:
                 ok = False
         if ok:
