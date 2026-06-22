@@ -13,7 +13,7 @@ export PYTHONPATH="${PROJECT_ROOT}:${PYTHONPATH}"
 
 # Default settings
 export API_HOST="${API_HOST:-0.0.0.0}"
-export API_PORT="${API_PORT:-8000}"
+export API_PORT="${API_PORT:-8001}"
 export DEBUG="${DEBUG:-false}"
 
 # JWT settings (change in production!)

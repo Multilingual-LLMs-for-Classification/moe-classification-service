@@ -41,6 +41,9 @@ services:
       # Request settings
       - REQUEST_TIMEOUT_SECONDS=120
       - MAX_CONCURRENT_GPU_REQUESTS=1
+
+      # Database (Supabase PostgreSQL — set your real connection string)
+      - DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.bjfrjsgvbibqsoyhwkvf.supabase.co:5432/postgres
     deploy:
       resources:
         reservations:

@@ -3,10 +3,22 @@ Main routing system orchestrator.
 
 Coordinates language detection, domain classification, task routing,
 and expert execution. This is the top-level component that ties everything together.
+
+Supports two modes:
+  coordinator_only=False (default / monolithic)
+      Loads gating models AND the full LLM expert pool. Runs end-to-end in-process.
+
+  coordinator_only=True
+      Loads only the lightweight gating models (FastText + XLM-RoBERTa + Q-learning).
+      Exposes run_gating() which returns a GatingResult with the resolved
+      base_model_key / adapter_name.  No LLM is loaded.
+      The caller (RoutingService) is responsible for dispatching to the expert worker.
 """
 
+import json
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -26,10 +38,33 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 _PACKAGE_ROOT = Path(__file__).parents[2]  # moe_router/
 
 
+@dataclass
+class GatingResult:
+    """Result from the lightweight gating pipeline (no LLM involved)."""
+    language: str
+    domain: str
+    task: str
+    base_model_key: str
+    adapter_name: str
+    routing_path: str
+
+
 class PromptRoutingSystem:
-    def __init__(self, training_mode: bool = False):
+    def __init__(self, training_mode: bool = False, coordinator_only: bool = False):
         config_path = _PACKAGE_ROOT / "experts" / "config"
+        self.coordinator_only = coordinator_only
         self.expert_registry_path = config_path / "experts_registry.json"
+
+        # Load registry JSON for model resolution (needed in coordinator mode too)
+        with open(self.expert_registry_path, "r", encoding="utf-8") as f:
+            self._registry = json.load(f)
+
+        # Always run gating models (XLM-RoBERTa domain classifier + Q-learning
+        # task router) on CPU so the GPU is reserved for the LLM expert pool.
+        from moe_router.gating.components import domain_classifier as _dc_mod
+        from moe_router.gating.components import q_learning_router as _ql_mod
+        _dc_mod.DEVICE = "cpu"
+        _ql_mod.DEVICE = "cpu"
 
         # Initialize language detector with registry path
         self.language_detector = LanguageDetector(registry_path=self.expert_registry_path)
@@ -75,25 +110,31 @@ class PromptRoutingSystem:
             print("Checking and downloading models if needed...")
             self.model_loader.download_all_models()
 
-        self.expert_pool = LLMAdapterPool(self.expert_registry_path)
+        if coordinator_only:
+            # Coordinator mode: gating pipeline only, no LLM pool or experts
+            self.expert_pool = None
+            self.experts = {}
+            print("Coordinator mode: expert pool not loaded (gating pipeline only)")
+        else:
+            self.expert_pool = LLMAdapterPool(self.expert_registry_path)
 
-        # Instantiate experts per domain/task using the registry
-        self.experts = {}
-        for domain, tasks in self.domain_tasks.items():
-            self.experts[domain] = {}
-            for task in tasks.keys():
-                self.experts[domain][task] = TaskExpert(
-                    TaskExpertConfig(
-                        domain=domain,
-                        task=task,
-                        registry_path=str(self.expert_registry_path),
-                        generation=None  # or per-task overrides dict
-                    ),
-                    pool=self.expert_pool
-                )
-        # Summary of initialized experts (without printing full dict)
-        expert_count = sum(len(tasks) for tasks in self.experts.values())
-        print(f"Initialized {expert_count} task experts across {len(self.experts)} domains")
+            # Instantiate experts per domain/task using the registry
+            self.experts = {}
+            for domain, tasks in self.domain_tasks.items():
+                self.experts[domain] = {}
+                for task in tasks.keys():
+                    self.experts[domain][task] = TaskExpert(
+                        TaskExpertConfig(
+                            domain=domain,
+                            task=task,
+                            registry_path=str(self.expert_registry_path),
+                            generation=None  # or per-task overrides dict
+                        ),
+                        pool=self.expert_pool
+                    )
+            # Summary of initialized experts (without printing full dict)
+            expert_count = sum(len(tasks) for tasks in self.experts.values())
+            print(f"Initialized {expert_count} task experts across {len(self.experts)} domains")
 
     def save_all_models(self):
         print("Saving all models...")
@@ -114,6 +155,93 @@ class PromptRoutingSystem:
         """Train per-domain QRouters on labeled (domain, task, prompt) items."""
         self.task_classifier.train(training_data, val_split=0.1)
         self.task_classifier.save_models()
+
+    def _resolve_model_for_task(
+        self,
+        task_key: str,
+        language: str,
+        task_cfg_override: Optional[Dict] = None,
+    ) -> Tuple[str, str]:
+        """
+        Returns (base_model_key, adapter_name) for the given task + detected language.
+
+        If task_cfg_override is provided (e.g. from a project's ProjectTaskConfig),
+        it is used instead of the global registry entry for this task.
+        Language mapping resolution logic mirrors LLMAdapterPool._resolve_base_model_for_language().
+        """
+        tcfg = task_cfg_override or self._registry["tasks"].get(task_key)
+        if not tcfg:
+            raise ValueError(f"Task '{task_key}' not found in registry")
+
+        default_base = tcfg.get("base_model_key")
+        default_adapter = tcfg.get("adapter_name")
+        lang_mapping = tcfg.get("language_mapping")
+
+        if not lang_mapping or not language:
+            return default_base, default_adapter
+
+        lang_lower = language.lower()
+
+        # Priority 1: direct per-language entry (no "languages" key)
+        if lang_lower in lang_mapping:
+            cfg = lang_mapping[lang_lower]
+            if "languages" not in cfg:
+                return (
+                    cfg.get("base_model_key", default_base),
+                    cfg.get("adapter_name", default_adapter)
+                )
+
+        # Priority 2: group membership
+        for group_cfg in lang_mapping.values():
+            if lang_lower in group_cfg.get("languages", []):
+                return (
+                    group_cfg.get("base_model_key", default_base),
+                    group_cfg.get("adapter_name", default_adapter)
+                )
+
+        # Priority 3: fallback to task default
+        return default_base, default_adapter
+
+    def run_gating(self, prompt: str, project_config: Optional[Dict] = None) -> GatingResult:
+        """
+        Lightweight gating pipeline — language detection, domain classification,
+        task routing, and expert model selection.  No LLM involved.
+
+        If project_config is provided, the task's base_model_key and adapter_name
+        are resolved from the project's task configuration instead of the global
+        registry, so the correct project-specific expert is selected.
+
+        Returns:
+            GatingResult with language, domain, task, base_model_key, adapter_name
+        """
+        language = self.language_detector.detect_language(prompt)
+        domain = self.domain_classifier.classify_domain(prompt)
+        task = self.task_classifier.classify_task(prompt, domain)
+        task_key = f"{domain}/{task}"
+
+        # Resolve model: project config overrides the global registry
+        task_cfg_override = None
+        if project_config and "tasks" in project_config:
+            task_cfg_override = project_config["tasks"].get(task_key)
+
+        base_model_key, adapter_name = self._resolve_model_for_task(
+            task_key, language, task_cfg_override=task_cfg_override
+        )
+
+        print(
+            f"[Gating] language={language} domain={domain} task={task} "
+            f"model={base_model_key} adapter={adapter_name}"
+            + (" [project override]" if task_cfg_override else " [global registry]")
+        )
+
+        return GatingResult(
+            language=language,
+            domain=domain,
+            task=task,
+            base_model_key=base_model_key,
+            adapter_name=adapter_name,
+            routing_path=f"{language} -> {domain} -> {task}"
+        )
 
     def route_prompt(self, prompt: str, classification_text: str = None,
                     review_title: str = None, input_data: Dict[str, str] = None) -> Dict:
@@ -184,6 +312,68 @@ class PromptRoutingSystem:
             'prompt_sent': prompt_sent
         }
         return output
+
+    def route_forced(
+        self,
+        prompt: str,
+        input_data: Dict,
+        force_language: str,
+        force_task: str,
+    ) -> Dict:
+        """
+        Bypass automatic language detection and task routing.
+        Directly executes the expert for the specified task + language.
+
+        Args:
+            prompt: Full prompt string (description + text)
+            input_data: Task-specific data (e.g. {"text": "..."})
+            force_language: Language name as stored in language_mapping (e.g. "english")
+            force_task: Full task key (e.g. "finance/rating")
+        """
+        parts = force_task.split("/", 1)
+        if len(parts) != 2:
+            raise ValueError(f"force_task must be 'domain/task', got '{force_task}'")
+        domain, task = parts
+
+        if domain not in self.experts or task not in self.experts[domain]:
+            raise ValueError(
+                f"No expert found for task '{force_task}'. "
+                f"Available: {[f'{d}/{t}' for d, ts in self.experts.items() for t in ts]}"
+            )
+
+        expert = self.experts[domain][task]
+        prediction = expert.predict(input_data, prompt, force_language)
+        base_model_key = None
+        prompt_sent = None
+
+        if isinstance(prediction, tuple):
+            if len(prediction) >= 5:
+                result, expert_confidence, raw_response, base_model_key, prompt_sent = prediction[:5]
+            elif len(prediction) >= 3:
+                result, expert_confidence, raw_response = prediction[:3]
+            else:
+                raise ValueError(
+                    f"Unexpected expert.predict tuple length: {len(prediction)}"
+                )
+        else:
+            raise TypeError(
+                f"expert.predict must return a tuple, got {type(prediction).__name__}"
+            )
+
+        return {
+            "input": prompt,
+            "input_data": input_data,
+            "language": force_language,
+            "domain": domain,
+            "domain_probabilities": {domain: 1.0},
+            "task": task,
+            "result": result,
+            "expert_confidence": expert_confidence,
+            "routing_path": f"{force_language} -> {domain} -> {task} [forced]",
+            "raw_response": raw_response,
+            "base_model_key": base_model_key,
+            "prompt_sent": prompt_sent,
+        }
 
     def get_system_stats(self):
         total_tasks = sum(len(tasks) for tasks in self.domain_tasks.items())

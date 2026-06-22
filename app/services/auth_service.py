@@ -3,39 +3,19 @@ Authentication service for JWT token management.
 """
 
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
+from typing import Optional
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.schemas.auth import TokenData, UserInDB
+from app.db import UserRecord, UserProfile as UserProfileRecord
+from app.schemas.auth import TokenData, UserInDB, UserProfile
 
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-
-# Simple in-memory user store (replace with database in production)
-_users_db: Dict[str, UserInDB] = {}
-
-
-def _init_users_from_config():
-    """Initialize users from config (for demo purposes)."""
-    global _users_db
-    if settings.users_store:
-        for user_entry in settings.users_store.split(","):
-            if ":" in user_entry:
-                username, hashed_password = user_entry.split(":", 1)
-                _users_db[username.strip()] = UserInDB(
-                    username=username.strip(),
-                    hashed_password=hashed_password.strip(),
-                    disabled=False
-                )
-
-
-# Initialize users on module load
-_init_users_from_config()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -48,14 +28,21 @@ def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def get_user(username: str) -> Optional[UserInDB]:
-    """Get user from store by username."""
-    return _users_db.get(username)
+def get_user(db: Session, username: str) -> Optional[UserInDB]:
+    """Get user from database by username."""
+    record = db.query(UserRecord).filter(UserRecord.username == username).first()
+    if record is None:
+        return None
+    return UserInDB(
+        username=record.username,
+        hashed_password=record.hashed_password,
+        disabled=record.disabled,
+    )
 
 
-def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
+def authenticate_user(db: Session, username: str, password: str) -> Optional[UserInDB]:
     """Authenticate user with username and password."""
-    user = get_user(username)
+    user = get_user(db, username)
     if not user:
         return None
     if not verify_password(password, user.hashed_password):
@@ -63,19 +50,92 @@ def authenticate_user(username: str, password: str) -> Optional[UserInDB]:
     return user
 
 
-def create_user(username: str, password: str) -> UserInDB:
-    """Create a new user."""
-    if username in _users_db:
+def create_user(db: Session, username: str, password: str) -> UserInDB:
+    """Create a new user in the database."""
+    if db.query(UserRecord).filter(UserRecord.username == username).first():
         raise ValueError(f"User {username} already exists")
 
     hashed_password = get_password_hash(password)
-    user = UserInDB(
-        username=username,
-        hashed_password=hashed_password,
-        disabled=False
+    record = UserRecord(username=username, hashed_password=hashed_password, disabled=False)
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return UserInDB(
+        username=record.username,
+        hashed_password=record.hashed_password,
+        disabled=record.disabled,
     )
-    _users_db[username] = user
-    return user
+
+
+def get_profile(db: Session, username: str) -> UserProfile:
+    """Return a user's profile, creating a blank one if it doesn't exist yet."""
+    record = db.query(UserProfileRecord).filter(UserProfileRecord.username == username).first()
+    if not record:
+        record = UserProfileRecord(username=username, updated_at=datetime.now(timezone.utc))
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+    return UserProfile(
+        username=record.username,
+        display_name=record.display_name,
+        bio=record.bio,
+        avatar=record.avatar,
+        updated_at=record.updated_at.isoformat() if record.updated_at else None,
+    )
+
+
+def update_profile(
+    db: Session, username: str,
+    display_name: Optional[str], bio: Optional[str],
+) -> UserProfile:
+    """Update display_name and/or bio for a user."""
+    record = db.query(UserProfileRecord).filter(UserProfileRecord.username == username).first()
+    if not record:
+        record = UserProfileRecord(username=username)
+        db.add(record)
+    if display_name is not None:
+        record.display_name = display_name
+    if bio is not None:
+        record.bio = bio
+    record.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(record)
+    return UserProfile(
+        username=record.username,
+        display_name=record.display_name,
+        bio=record.bio,
+        avatar=record.avatar,
+        updated_at=record.updated_at.isoformat(),
+    )
+
+
+def update_avatar(db: Session, username: str, avatar: str) -> UserProfile:
+    """Replace the stored avatar (base64 data URL)."""
+    record = db.query(UserProfileRecord).filter(UserProfileRecord.username == username).first()
+    if not record:
+        record = UserProfileRecord(username=username)
+        db.add(record)
+    record.avatar = avatar
+    record.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(record)
+    return UserProfile(
+        username=record.username,
+        display_name=record.display_name,
+        bio=record.bio,
+        avatar=record.avatar,
+        updated_at=record.updated_at.isoformat(),
+    )
+
+
+def change_password(db: Session, username: str, current_password: str, new_password: str) -> bool:
+    """Verify current password then set new password. Returns False if current is wrong."""
+    record = db.query(UserRecord).filter(UserRecord.username == username).first()
+    if not record or not verify_password(current_password, record.hashed_password):
+        return False
+    record.hashed_password = get_password_hash(new_password)
+    db.commit()
+    return True
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:

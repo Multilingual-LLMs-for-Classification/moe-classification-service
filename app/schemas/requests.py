@@ -2,7 +2,7 @@
 Request schemas for classification endpoints.
 """
 
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -35,6 +35,18 @@ class ClassifyRequest(BaseModel):
     options: ClassifyOptions = Field(
         default_factory=ClassifyOptions,
         description="Optional response configuration"
+    )
+    project_id: Optional[int] = Field(
+        None,
+        description="Associate this classification with a project"
+    )
+    force_language: Optional[str] = Field(
+        None,
+        description="Force a specific language (e.g. 'english') bypassing auto-detection"
+    )
+    force_task: Optional[str] = Field(
+        None,
+        description="Force a specific task key (e.g. 'finance/rating') bypassing auto-routing"
     )
 
     model_config = {

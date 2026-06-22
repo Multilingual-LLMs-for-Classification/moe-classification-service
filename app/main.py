@@ -9,8 +9,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.db import create_tables, SessionLocal
 from app.routers import admin, analytics, auth, classify, health
+from app.routers import projects
 from app.services.routing_service import routing_service
+from app.services.project_service import seed_dummy_data, seed_default_config, sync_all_project_task_configs
 from app.middleware.error_handler import ErrorHandlerMiddleware, add_request_id
 
 
@@ -24,9 +27,23 @@ async def lifespan(app: FastAPI):
     - Shutdown: Cleanup resources
     """
     # Startup
+    create_tables()
     print("=" * 60)
     print("Starting Classification Service...")
     print("=" * 60)
+
+    # Seed system default config from filesystem JSON (once, if not yet in DB)
+    # and seed dummy project data for the first registered user (if any)
+    db = SessionLocal()
+    try:
+        seed_default_config(db)
+        sync_all_project_task_configs(db)
+        from app.db import UserRecord
+        first_user = db.query(UserRecord).first()
+        if first_user:
+            seed_dummy_data(db, first_user.username)
+    finally:
+        db.close()
 
     # Initialize routing system in background thread
     # (model loading is CPU/IO bound and can block the event loop)
@@ -83,6 +100,7 @@ app.include_router(analytics.router)
 app.include_router(auth.router)
 app.include_router(classify.router)
 app.include_router(health.router)
+app.include_router(projects.router)
 
 
 @app.get("/")

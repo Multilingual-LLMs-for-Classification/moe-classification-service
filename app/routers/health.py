@@ -7,6 +7,8 @@ from fastapi import APIRouter
 from app.config import settings
 from app.schemas.responses import HealthResponse, ReadyResponse
 from app.services.routing_service import routing_service
+from app.services import system_service
+from app.dependencies import CurrentUser
 
 router = APIRouter(prefix="/api/v1/health", tags=["Health"])
 
@@ -59,3 +61,12 @@ async def liveness_check() -> dict:
     Simple endpoint that returns 200 if the process is alive.
     """
     return {"status": "alive"}
+
+
+@router.get("/system")
+async def system_stats(current_user: CurrentUser) -> dict:
+    """
+    Live snapshot of host machine resources: CPU, RAM, disk, and GPU(s).
+    Requires authentication.
+    """
+    return system_service.get_system_stats()

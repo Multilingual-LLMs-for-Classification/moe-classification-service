@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     api_version: str = "1.0.0"
     api_description: str = "Multilingual text classification using Mixture of Experts routing"
     api_host: str = "0.0.0.0"
-    api_port: int = 8000
+    api_port: int = 8001
     debug: bool = False
 
     # JWT Settings
@@ -43,9 +43,8 @@ class Settings(BaseSettings):
     request_timeout_seconds: int = 600
     max_concurrent_gpu_requests: int = 1
 
-    # User Store (simple in-memory for demo; replace with DB in production)
-    # Format: "username:hashed_password,username2:hashed_password2"
-    users_store: str = ""
+    # Database URL — set via DATABASE_URL environment variable
+    database_url: str = "postgresql://postgres:[YOUR-PASSWORD]@db.bjfrjsgvbibqsoyhwkvf.supabase.co:5432/postgres"
 
 
 # Global settings instance

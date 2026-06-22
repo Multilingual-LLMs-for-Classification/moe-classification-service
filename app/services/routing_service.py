@@ -1,10 +1,18 @@
 """
 Routing service that wraps the MOE-Router PromptRoutingSystem.
+
+Handles:
+- Lazy initialization of the routing system
+- GPU concurrency control via semaphore
+- Request/response transformation
+- Timeout handling
+- Per-project config injection via pool.cfg patching
 """
 
 import time
 import asyncio
 from asyncio import Semaphore
+from contextlib import contextmanager
 from typing import Dict, Any, Optional
 from uuid import uuid4
 
@@ -14,15 +22,6 @@ from app.schemas.responses import ClassifyResponse
 
 
 class RoutingService:
-    """
-    Service wrapper around PromptRoutingSystem.
-
-    Handles:
-    - Lazy initialization of the routing system
-    - GPU concurrency control via semaphore
-    - Request/response transformation
-    - Timeout handling
-    """
 
     def __init__(self):
         self._routing_system = None
@@ -30,17 +29,10 @@ class RoutingService:
         self._gpu_semaphore = Semaphore(settings.max_concurrent_gpu_requests)
 
     def initialize(self) -> bool:
-        """
-        Initialize the routing system.
-
-        Returns:
-            True if initialization successful, False otherwise
-        """
         if self._initialized:
             return True
 
         try:
-            # Import PromptRoutingSystem from local moe_router package
             from moe_router.gating.components.routing_system import PromptRoutingSystem
 
             print("Initializing PromptRoutingSystem...")
@@ -57,55 +49,57 @@ class RoutingService:
 
     @property
     def is_initialized(self) -> bool:
-        """Check if routing system is initialized."""
         return self._initialized and self._routing_system is not None
 
     def get_system_stats(self) -> Dict[str, Any]:
-        """Get system statistics from routing system."""
         if not self.is_initialized:
             return {"error": "Routing system not initialized"}
         return self._routing_system.get_system_stats()
 
+    @contextmanager
+    def _project_config_patch(self, project_cfg: Dict[str, Any]):
+        """
+        Temporarily replace expert_pool.cfg with per-project config for one
+        inference call. Safe because this is always called within the GPU
+        semaphore which serialises all inference. Original cfg is restored
+        in the finally block even if an exception occurs.
+        """
+        pool = self._routing_system.expert_pool
+        original_cfg = pool.cfg
+        try:
+            pool.cfg = project_cfg
+            print(f"[ProjectConfig] Patched pool.cfg with project config "
+                  f"(tasks: {list(project_cfg.get('tasks', {}).keys())})")
+            yield
+        finally:
+            pool.cfg = original_cfg
+            print("[ProjectConfig] Restored global pool.cfg")
+
     async def classify(
         self,
         request: ClassifyRequest,
-        timeout_seconds: Optional[int] = None
+        timeout_seconds: Optional[int] = None,
+        project_config: Optional[Dict[str, Any]] = None,
     ) -> ClassifyResponse:
-        """
-        Classify text using the routing system.
-
-        Args:
-            request: Classification request
-            timeout_seconds: Optional timeout override
-
-        Returns:
-            ClassifyResponse with classification results
-
-        Raises:
-            RuntimeError: If routing system not initialized
-            TimeoutError: If classification times out
-        """
         if not self.is_initialized:
             raise RuntimeError("Routing system not initialized")
 
         timeout = timeout_seconds or settings.request_timeout_seconds
         request_id = str(uuid4())
 
-        # Acquire GPU semaphore for concurrency control
         async with self._gpu_semaphore:
             try:
-                # Run classification in thread pool with timeout
                 result = await asyncio.wait_for(
                     asyncio.get_event_loop().run_in_executor(
                         None,
                         self._sync_classify,
                         request,
-                        request_id
+                        request_id,
+                        project_config,
                     ),
                     timeout=timeout
                 )
                 return result
-
             except asyncio.TimeoutError:
                 raise TimeoutError(
                     f"Classification timed out after {timeout} seconds"
@@ -114,39 +108,48 @@ class RoutingService:
     def _sync_classify(
         self,
         request: ClassifyRequest,
-        request_id: str
+        request_id: str,
+        project_config: Optional[Dict[str, Any]] = None,
     ) -> ClassifyResponse:
-        """
-        Synchronous classification (runs in thread pool).
-
-        Combines description + text into a prompt for routing (language/domain/task),
-        then passes the text separately as input_data for the expert.
-
-        Args:
-            request: Classification request
-            request_id: Unique request identifier
-
-        Returns:
-            ClassifyResponse with results
-        """
         start_time = time.perf_counter()
 
-        # Combine description and text into the prompt for routing
         prompt = f"{request.description}\n\n{request.text}"
-
-        # Prepare input data for the expert
         input_data = {"text": request.text}
 
-        # Call routing system
-        result = self._routing_system.route_prompt(
-            prompt=prompt,
-            input_data=input_data
-        )
+        force_language = getattr(request, "force_language", None)
+        force_task = getattr(request, "force_task", None)
 
-        # Calculate processing time
+        if force_language and force_task:
+            # Bypass automatic routing — directly call the specified expert
+            if project_config is not None:
+                with self._project_config_patch(project_config):
+                    result = self._routing_system.route_forced(
+                        prompt=prompt,
+                        input_data=input_data,
+                        force_language=force_language,
+                        force_task=force_task,
+                    )
+            else:
+                result = self._routing_system.route_forced(
+                    prompt=prompt,
+                    input_data=input_data,
+                    force_language=force_language,
+                    force_task=force_task,
+                )
+        elif project_config is not None:
+            with self._project_config_patch(project_config):
+                result = self._routing_system.route_prompt(
+                    prompt=prompt,
+                    input_data=input_data
+                )
+        else:
+            result = self._routing_system.route_prompt(
+                prompt=prompt,
+                input_data=input_data
+            )
+
         processing_time_ms = (time.perf_counter() - start_time) * 1000
 
-        # Build response
         response = ClassifyResponse(
             request_id=request_id,
             language=result.get("language", "unknown"),
@@ -158,7 +161,6 @@ class RoutingService:
             processing_time_ms=processing_time_ms
         )
 
-        # Add optional fields based on request options
         if request.options.return_probabilities:
             response.domain_probabilities = result.get("domain_probabilities")
 

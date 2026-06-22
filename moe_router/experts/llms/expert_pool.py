@@ -78,25 +78,32 @@ class LLMAdapterPool:
 
     def _unload_base_model(self, base_key: str):
         """Unload a base model from GPU memory to free up space."""
+        import gc
         if base_key not in self.base_models:
             return
 
         print(f"[Memory Management] Unloading model '{base_key}' from GPU...")
 
-        # Move model to CPU to free GPU memory
-        self.base_models[base_key]["model"].cpu()
+        # Grab the model object and drop all references before GC
+        slot = self.base_models.pop(base_key)
+        self.model_access_times.pop(base_key, None)
 
-        # Delete from cache
-        del self.base_models[base_key]
-        if base_key in self.model_access_times:
-            del self.model_access_times[base_key]
+        model = slot.pop("model", None)
+        slot.clear()
 
-        # Force garbage collection
-        import gc
+        # Delete the model object and all its references
+        del model
+        del slot
+
+        # Force full GC + CUDA cache flush so the GPU VRAM is actually released
+        # before we attempt to load the next model.
         gc.collect()
-        torch.cuda.empty_cache()
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            torch.cuda.empty_cache()
 
-        print(f"Model '{base_key}' unloaded successfully")
+        print(f"[Memory Management] Model '{base_key}' unloaded and GPU cache cleared")
 
     def _ensure_memory_available(self, base_key_to_load: str):
         """Ensure sufficient memory is available before loading a new model."""
@@ -126,7 +133,6 @@ class LLMAdapterPool:
         base = self.cfg["base_models"][base_key]
         hf_name = base["hf_name"]
         load_in_4bit = bool(base.get("load_in_4bit", False))
-        device_map = base.get("device_map", "auto")
 
         print(f"[LLMAdapterPool] Loading base model: {base_key} ({hf_name})")
         tok = AutoTokenizer.from_pretrained(
@@ -141,15 +147,15 @@ class LLMAdapterPool:
         bnb_kw = _maybe_bnb_quant(load_in_4bit)
         model = AutoModelForCausalLM.from_pretrained(
             hf_name,
-            torch_dtype=None if load_in_4bit else (torch.float16 if torch.cuda.is_available() else torch.float32),
+            torch_dtype=None if load_in_4bit else torch.float16,
             trust_remote_code=True,
             low_cpu_mem_usage=True,
-            device_map=device_map,
+            device_map={"": "cuda:0"},
             **bnb_kw
         )
-        if load_in_4bit:
-            from peft import prepare_model_for_kbit_training
-            model = prepare_model_for_kbit_training(model)
+        # NOTE: prepare_model_for_kbit_training is only for fine-tuning, not inference.
+        # Calling it moves some norm layers to fp32 on CPU, which causes the
+        # "Some modules dispatched on CPU/disk" PEFT error at inference time.
         self.base_models[base_key] = {
             "model": model,
             "tok": tok,
