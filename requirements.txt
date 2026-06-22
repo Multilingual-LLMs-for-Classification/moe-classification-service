@@ -28,6 +28,14 @@ accelerate>=0.24.0
 # Utilities
 requests>=2.31.0
 
+# System monitoring
+psutil>=5.9.0
+nvidia-ml-py>=12.0.0
+
+# Database
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+
 # Testing
 pytest>=7.0.0
 httpx>=0.24.0
